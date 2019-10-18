@@ -87,7 +87,8 @@ void setup()
 		powerSteps[i].setOCShutdown(OC_SD_DISABLE);
 		powerSteps[i].setPWMFreq(PWM_DIV_1, PWM_MUL_0_75);
 		powerSteps[i].setVoltageComp(VS_COMP_DISABLE);
-		powerSteps[i].setSwitchMode(SW_USER);
+		//powerSteps[i].setSwitchMode(SW_USER);
+		powerSteps[i].setSwitchMode(SW_HARD_STOP);
 		powerSteps[i].setOscMode(EXT_24MHZ_OSCOUT_INVERT);
 		//powerSteps[i].setOscMode(INT_16MHZ);
 		powerSteps[i].setRunKVAL(64);
@@ -402,6 +403,7 @@ void hardHiZ(OSCMessage &msg ,int addrOffset) {
 
 
 void OSCMsgReceive() {
+
 	OSCMessage msgIN;
 	int size;
 	if((size = Udp.parsePacket())>0){
@@ -415,28 +417,28 @@ void OSCMsgReceive() {
 
 			msgIN.route("/setSpdProfile",setSpdProfile);
 
-    		msgIN.route("setMaxSpeed", setMaxSpeed);
-    		msgIN.route("setMinSpeed", setMinSpeed);
-    		msgIN.route("setFullSpeed", setFullSpeed);
-    		msgIN.route("setAcc", setAcc);
-    		msgIN.route("setDec", setDec);
+    		msgIN.route("/setMaxSpeed", setMaxSpeed);
+    		msgIN.route("/setMinSpeed", setMinSpeed);
+    		msgIN.route("/setFullSpeed", setFullSpeed);
+    		msgIN.route("/setAcc", setAcc);
+    		msgIN.route("/setDec", setDec);
 
     		msgIN.route("/setSpdProfileRaw",setSpdProfileRaw);
 
-    		msgIN.route("setMaxSpeedRaw", setMaxSpeedRaw);
-    		msgIN.route("setMinSpeedRaw", setMinSpeedRaw);
-    		msgIN.route("setFullSpeedRaw", setFullSpeedRaw);
-    		msgIN.route("setAccRaw", setAccRaw);
-    		msgIN.route("setDecRaw", setDecRaw);
+    		msgIN.route("/setMaxSpeedRaw", setMaxSpeedRaw);
+    		msgIN.route("/setMinSpeedRaw", setMinSpeedRaw);
+    		msgIN.route("/setFullSpeedRaw", setFullSpeedRaw);
+    		msgIN.route("/setAccRaw", setAccRaw);
+    		msgIN.route("/setDecRaw", setDecRaw);
 
 			msgIN.route("/getSpdProfile",getSpdProfile);
 			msgIN.route("/getSpdProfileRaw",getSpdProfileRaw);
 
 			msgIN.route("/setKVAL",setKVAL);
-			msgIN.route("setAccKVAL", setAccKVAL);
-    		msgIN.route("setDecKVAL", setDecKVAL);
-    		msgIN.route("setRunKVAL", setRunKVAL);
-    		msgIN.route("setHoldKVAL", setHoldKVAL);
+			msgIN.route("/setAccKVAL", setAccKVAL);
+    		msgIN.route("/setDecKVAL", setDecKVAL);
+    		msgIN.route("/setRunKVAL", setRunKVAL);
+    		msgIN.route("/setHoldKVAL", setHoldKVAL);
 
 			msgIN.route("/getKVAL",getKVAL);
 
