@@ -68,7 +68,7 @@ void setup()
 
 	// Start SPI for PowerSTEP
 	powerStepSPI.begin();
-	powerStepSPI.setClockDivider(128); // default 4
+	powerStepSPI.setClockDivider(4); // default 4
 	pinPeripheral(POWERSTEP_MOSI, PIO_SERCOM_ALT);
 	pinPeripheral(POWERSTEP_SCK, PIO_SERCOM_ALT);
 	pinPeripheral(POWERSTEP_MISO , PIO_SERCOM_ALT);
@@ -88,8 +88,8 @@ void setup()
 		powerSteps[i].setPWMFreq(PWM_DIV_1, PWM_MUL_0_75);
 		powerSteps[i].setVoltageComp(VS_COMP_DISABLE);
 		powerSteps[i].setSwitchMode(SW_USER);
-		//powerSteps[i].setOscMode(EXT_24MHZ_OSCOUT_INVERT);
-		powerSteps[i].setOscMode(INT_16MHZ);
+		powerSteps[i].setOscMode(EXT_24MHZ_OSCOUT_INVERT);
+		//powerSteps[i].setOscMode(INT_16MHZ);
 		powerSteps[i].setRunKVAL(64);
 		powerSteps[i].setAccKVAL(64);
 		powerSteps[i].setDecKVAL(64);
@@ -127,6 +127,12 @@ void setDestIp(OSCMessage &msg ,int addrOffset) {
 	digitalWrite(ledPin, !digitalRead(ledPin));
 }
 
+void getStatus(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	sendOneData("/status", powerSteps[target].getStatus());
+}
+
+#pragma region kval_commands_osc_listener
 void setKVAL(OSCMessage &msg ,int addrOffset) {
 	uint8_t target = constrain(msg.getInt(0),0,3);
 	int t = msg.getInt(1);
@@ -142,49 +148,258 @@ void setKVAL(OSCMessage &msg ,int addrOffset) {
 	t = constrain(t,0,255);
 	powerSteps[target].setDecKVAL(t);
 }
+void setAccKVAL(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	byte kvalInput = msg.getInt(1);
+	powerSteps[target].setAccKVAL(kvalInput);
+}
+void setDecKVAL(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	byte kvalInput = msg.getInt(1);
+	powerSteps[target].setDecKVAL(kvalInput);
+}
+void setRunKVAL(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	byte kvalInput = msg.getInt(1);
+	powerSteps[target].setRunKVAL(kvalInput);
+}
+void setHoldKVAL(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	byte kvalInput = msg.getInt(1);
+	powerSteps[target].setHoldKVAL(kvalInput);
+}
+void getKVAL(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+
+	OSCMessage newMes("/kval");
+	newMes.add((int32_t)target);
+	newMes.add((int32_t)powerSteps[target].getHoldKVAL());
+	newMes.add((int32_t)powerSteps[target].getRunKVAL());
+	newMes.add((int32_t)powerSteps[target].getAccKVAL());
+	newMes.add((int32_t)powerSteps[target].getDecKVAL());
+	Udp.beginPacket(destIp, outPort);
+	newMes.send(Udp);
+	Udp.endPacket();
+	newMes.empty();
+}
+#pragma endregion
+
+#pragma region speed_commands_osc_listener
 
 void setSpdProfile(OSCMessage &msg ,int addrOffset) {
 	uint8_t target = constrain(msg.getInt(0),0,3);
 	float t = msg.getFloat(1);
-	powerSteps[target].setAcc(t);
-	t = msg.getFloat(2);
-	powerSteps[target].setDec(t);
-	t = msg.getFloat(3);
 	powerSteps[target].setMaxSpeed(t);
+	t = msg.getFloat(2);
+	powerSteps[target].setMinSpeed(t);
+	t = msg.getFloat(3);
+	powerSteps[target].setAcc(t);
+	t = msg.getFloat(4);
+	powerSteps[target].setDec(t);
 }
 
-void run(OSCMessage &msg ,int addrOffset) {
+void setMaxSpeed(OSCMessage &msg ,int addrOffset) {
 	uint8_t target = constrain(msg.getInt(0),0,3);
-	float spd = msg.getFloat(1);
-	boolean dir = spd>0;
-	powerSteps[target].run(dir,abs(spd));
+	float stepsPerSecond = msg.getFloat(1);
+	powerSteps[target].setMaxSpeed(stepsPerSecond);
 }
+void setMinSpeed(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	float stepsPerSecond = msg.getFloat(1);
+	powerSteps[target].setMinSpeed(stepsPerSecond);
+}
+void setFullSpeed(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	float stepsPerSecond = msg.getFloat(1);
+	powerSteps[target].setFullSpeed(stepsPerSecond);
+}
+void setAcc(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	float stepsPerSecondPerSecond = msg.getFloat(1);
+	powerSteps[target].setAcc(stepsPerSecondPerSecond);
+}
+void setDec(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	float stepsPerSecondPerSecond = msg.getFloat(1);
+	powerSteps[target].setDec(stepsPerSecondPerSecond);
+}
+
+void setSpdProfileRaw(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	int t = msg.getInt(1);
+	powerSteps[target].setMaxSpeedRaw(t);
+	t = msg.getInt(2);
+	powerSteps[target].setMinSpeedRaw(t);
+	t = msg.getInt(3);
+	powerSteps[target].setAccRaw(t);
+	t = msg.getInt(4);
+	powerSteps[target].setDecRaw(t);
+}
+
+void setMaxSpeedRaw(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	int integerSpeed = msg.getInt(1);
+	powerSteps[target].setMaxSpeedRaw(integerSpeed);
+}
+void setMinSpeedRaw(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	int integerSpeed = msg.getInt(1);
+	powerSteps[target].setMinSpeedRaw(integerSpeed);
+}
+void setFullSpeedRaw(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	int integerSpeed = msg.getInt(1);
+	powerSteps[target].setFullSpeedRaw(integerSpeed);
+}
+void setAccRaw(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	int integerAcc = msg.getInt(1);
+	powerSteps[target].setAccRaw(integerAcc);
+}
+void setDecRaw(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	int integerDec = msg.getInt(1);
+	powerSteps[target].setDecRaw(integerDec);
+}
+
+void getSpdProfile(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+
+	OSCMessage newMes("/spd");
+	newMes.add((int32_t)target);
+	newMes.add((float)powerSteps[target].getMaxSpeed());
+	newMes.add((float)powerSteps[target].getMinSpeed());
+	newMes.add((float)powerSteps[target].getAcc());
+	newMes.add((float)powerSteps[target].getDec());
+	Udp.beginPacket(destIp, outPort);
+	newMes.send(Udp);
+	Udp.endPacket();
+	newMes.empty();
+}
+void getSpdProfileRaw(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+
+	OSCMessage newMes("/spdRaw");
+	newMes.add((int32_t)target);
+	newMes.add((int32_t)powerSteps[target].getMaxSpeedRaw());
+	newMes.add((int32_t)powerSteps[target].getMinSpeedRaw());
+	newMes.add((int32_t)powerSteps[target].getAccRaw());
+	newMes.add((int32_t)powerSteps[target].getDecRaw());
+	Udp.beginPacket(destIp, outPort);
+	newMes.send(Udp);
+	Udp.endPacket();
+	newMes.empty();
+}
+#pragma endregion
+
+#pragma region operational_commands_osc_listener
 
 void getPos(OSCMessage &msg ,int addrOffset) {
 	uint8_t target = constrain(msg.getInt(0),0,3);
 	sendOneData("/pos", powerSteps[target].getPos());
 }
-
-void setPos(OSCMessage &msg ,int addrOffset) {
+void getMark(OSCMessage &msg ,int addrOffset) {
 	uint8_t target = constrain(msg.getInt(0),0,3);
-	long t = msg.getInt(1);
-	powerSteps[target].setPos(t);
+	sendOneData("/mark", powerSteps[target].getMark());
 }
 
-void hardStop(OSCMessage &msg ,int addrOffset) {
+void run(OSCMessage &msg ,int addrOffset) {
 	uint8_t target = constrain(msg.getInt(0),0,3);
+	float stepsPerSec = msg.getFloat(1);
+	boolean dir = stepsPerSec>0;
+	powerSteps[target].run(dir,abs(stepsPerSec));
+}
+void runRaw(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	int integerSpeed = msg.getInt(1);
+	boolean dir = integerSpeed>0;
+	powerSteps[target].runRaw(dir, abs(integerSpeed));
+}
+void move(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0), 0, 3);
+	uint8_t dir = constrain(msg.getInt(1), 0, 1);
+	unsigned long numSteps = msg.getInt(2);
+	powerSteps[target].move(dir, numSteps);
+}
+void goTo(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0), 0, 3);
+	unsigned long pos = msg.getInt(1);
+	powerSteps[target].goTo(pos);
+}
+void goToDir(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0), 0, 3);
+	uint8_t dir = constrain(msg.getInt(1), 0, 1);
+	unsigned long pos = msg.getInt(2);
+	powerSteps[target].goToDir(dir, pos);
+}
+// todo: action‚Ä‚È‚É
+void goUntil(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0), 0, 3);
+	uint8_t action = msg.getInt(1);
+	uint8_t dir = constrain(msg.getInt(2), 0, 1);
+	float stepsPerSec = msg.getFloat(3);
+	powerSteps[target].goUntil(action, dir, stepsPerSec);
+}
+void goUntilRaw(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0), 0, 3);
+	uint8_t action = msg.getInt(1);
+	uint8_t dir = constrain(msg.getInt(2), 0, 1);
+	int integerSpeed = msg.getInt(3);
+	powerSteps[target].goUntilRaw(action, dir, integerSpeed);
+}
+void releaseSw(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0), 0, 3);
+	uint8_t action = msg.getInt(1);
+	uint8_t dir = constrain(msg.getInt(2), 0, 1);
+	powerSteps[target].releaseSw(action, dir);
+}
+void goHome(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0), 0, 3);
+	powerSteps[target].goHome();
+}
+void goMark(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0), 0, 3);
+	powerSteps[target].goMark();
+}
+void setMark(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0), 0, 3);
+	unsigned long newMark = msg.getInt(1);
+	powerSteps[target].setMark(newMark);
+}
+void setPos(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0), 0, 3);
+	unsigned long newPos = msg.getInt(1);
+	powerSteps[target].setPos(newPos);
+}
+void resetPos(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0), 0, 3);
+	powerSteps[target].resetPos();
+}
+void resetDev(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0), 0, 3);
+	powerSteps[target].resetDev();
+}
+void softStop(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0), 0, 3);
+	powerSteps[target].softStop();
+}
+void hardStop(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0), 0, 3);
 	powerSteps[target].hardStop();
 }
-
+void softHiZ(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0), 0, 3);
+	powerSteps[target].softHiZ();
+}
 void hardHiZ(OSCMessage &msg ,int addrOffset) {
-	uint8_t target = constrain(msg.getInt(0),0,3);
+	uint8_t target = constrain(msg.getInt(0), 0, 3);
 	powerSteps[target].hardHiZ();
 }
+#pragma endregion
 
-void getStatus(OSCMessage &msg ,int addrOffset) {
-	uint8_t target = constrain(msg.getInt(0),0,3);
-	sendOneData("/status", powerSteps[target].getStatus());
-}
+
+
+
 
 void OSCMsgReceive() {
 	OSCMessage msgIN;
@@ -194,16 +409,57 @@ void OSCMsgReceive() {
 		msgIN.fill(Udp.read());
 
 		if(!msgIN.hasError()){
+			msgIN.route("/setDestIp",setDestIp);
+
 			msgIN.route("/getStatus", getStatus);
 
-			msgIN.route("/run",run);
 			msgIN.route("/setSpdProfile",setSpdProfile);
-			msgIN.route("/getPos",getPos);
-			msgIN.route("/setPos",setPos);
+
+    		msgIN.route("setMaxSpeed", setMaxSpeed);
+    		msgIN.route("setMinSpeed", setMinSpeed);
+    		msgIN.route("setFullSpeed", setFullSpeed);
+    		msgIN.route("setAcc", setAcc);
+    		msgIN.route("setDec", setDec);
+
+    		msgIN.route("/setSpdProfileRaw",setSpdProfileRaw);
+
+    		msgIN.route("setMaxSpeedRaw", setMaxSpeedRaw);
+    		msgIN.route("setMinSpeedRaw", setMinSpeedRaw);
+    		msgIN.route("setFullSpeedRaw", setFullSpeedRaw);
+    		msgIN.route("setAccRaw", setAccRaw);
+    		msgIN.route("setDecRaw", setDecRaw);
+
+			msgIN.route("/getSpdProfile",getSpdProfile);
+			msgIN.route("/getSpdProfileRaw",getSpdProfileRaw);
+
 			msgIN.route("/setKVAL",setKVAL);
-			msgIN.route("/hardStop",hardStop);
-			msgIN.route("/hardHiZ",hardHiZ);
-			msgIN.route("/setDestIp",setDestIp);
+			msgIN.route("setAccKVAL", setAccKVAL);
+    		msgIN.route("setDecKVAL", setDecKVAL);
+    		msgIN.route("setRunKVAL", setRunKVAL);
+    		msgIN.route("setHoldKVAL", setHoldKVAL);
+
+			msgIN.route("/getKVAL",getKVAL);
+
+			msgIN.route("/getPos", getPos);
+    		msgIN.route("/getMark", getMark);
+    		msgIN.route("/run", run);
+    		msgIN.route("/runRaw", runRaw);
+    		msgIN.route("/move", move);
+    		msgIN.route("/goTo", goTo);
+    		msgIN.route("/goToDir", goToDir);
+    		msgIN.route("/goUntil", goUntil);
+    		msgIN.route("/goUntilRaw", goUntilRaw);
+    		msgIN.route("/releaseSw", releaseSw);
+    		msgIN.route("/goHome", goHome);
+    		msgIN.route("/goMark", goMark);
+    		msgIN.route("/setMark", setMark);
+    		msgIN.route("/setPos", setPos);
+    		msgIN.route("/resetPos", resetPos);
+    		msgIN.route("/resetDev", resetDev);
+    		msgIN.route("/softStop", softStop);
+    		msgIN.route("/hardStop", hardStop);
+    		msgIN.route("/softHiZ", softHiZ);
+    		msgIN.route("/hardHiZ", hardHiZ);
 		}
 	}
 }
