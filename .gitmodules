@@ -1,0 +1,3 @@
+[submodule "firmware/step400_OSCtester/step400_OSCtester/LocalLibraries/powerSTEP01_Arduino_Library"]
+	path = firmware/step400_OSCtester/step400_OSCtester/LocalLibraries/powerSTEP01_Arduino_Library
+	url = git@github.com:niimi/powerSTEP01_Arduino_Library.git

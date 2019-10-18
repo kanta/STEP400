@@ -3,12 +3,13 @@
  *
  * Created: 9/19/2019 4:53:04 PM
  * Author: kanta
- */ 
+ */
 
 #include <Arduino.h>
 #include <Ethernet.h>
 #include <OSCMessage.h>
-#include <powerSTEP01ArduinoLibrary.h>
+//#include <powerSTEP01ArduinoLibrary.h>
+#include "LocalLibraries/powerSTEP01_Arduino_Library/src/powerSTEP01ArduinoLibrary.h"
 #include <SPI.h>
 #include "wiring_private.h" // pinPeripheral() function
 
@@ -46,8 +47,8 @@ const uint8_t dipSwPin[8] = {A5,SCL,7u,SDA,2u,9u,3u,0u};
 void setup()
 {
 	pinMode(ledPin, OUTPUT);
-	pinMode(SD_CS, OUTPUT);		
-		
+	pinMode(SD_CS, OUTPUT);
+
 	// Start serial
 	SerialUSB.begin(9600);
 	SerialUSB.println("powerSTEP01 Arduino control initialising...");
@@ -106,7 +107,7 @@ void setup()
 
 
 	SerialUSB.println(F("Initialisation complete"));
-	
+
 		Ethernet.begin(mac, myIp);
 		Udp.begin(inPort);
 }
@@ -194,6 +195,7 @@ void OSCMsgReceive() {
 
 		if(!msgIN.hasError()){
 			msgIN.route("/getStatus", getStatus);
+
 			msgIN.route("/run",run);
 			msgIN.route("/setSpdProfile",setSpdProfile);
 			msgIN.route("/getPos",getPos);
