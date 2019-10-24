@@ -1,9 +1,9 @@
 /*
- * step400_OSCtester.ino
- *
- * Created: 9/19/2019 4:53:04 PM
- * Author: kanta
- */
+* step400_OSCtester.ino
+*
+* Created: 9/19/2019 4:53:04 PM
+* Author: kanta
+*/
 
 #include <Arduino.h>
 #include <Ethernet.h>
@@ -73,11 +73,13 @@ void setup()
 	pinPeripheral(POWERSTEP_SCK, PIO_SERCOM_ALT);
 	pinPeripheral(POWERSTEP_MISO , PIO_SERCOM_ALT);
 	powerStepSPI.setDataMode(SPI_MODE3);
+	delay(100);
 	// Configure powerSTEP
 	for (uint8_t i=0; i<4; i++)
 	{
 		powerSteps[i].SPIPortConnect(&powerStepSPI);
-		powerSteps[i].configStepMode(STEP_FS_128);
+		//powerSteps[i].configStepMode(STEP_FS_128);
+		powerSteps[i].configStepMode(STEP_FS);
 		powerSteps[i].setMaxSpeed(10000);
 		powerSteps[i].setFullSpeed(2000);
 		powerSteps[i].setAcc(2000);
@@ -87,8 +89,8 @@ void setup()
 		powerSteps[i].setOCShutdown(OC_SD_DISABLE);
 		powerSteps[i].setPWMFreq(PWM_DIV_1, PWM_MUL_0_75);
 		powerSteps[i].setVoltageComp(VS_COMP_DISABLE);
-		//powerSteps[i].setSwitchMode(SW_USER);
-		powerSteps[i].setSwitchMode(SW_HARD_STOP);
+		powerSteps[i].setSwitchMode(SW_USER);
+		//powerSteps[i].setSwitchMode(SW_HARD_STOP);
 		powerSteps[i].setOscMode(EXT_24MHZ_OSCOUT_INVERT);
 		//powerSteps[i].setOscMode(INT_16MHZ);
 		powerSteps[i].setRunKVAL(64);
@@ -109,8 +111,8 @@ void setup()
 
 	SerialUSB.println(F("Initialisation complete"));
 
-		Ethernet.begin(mac, myIp);
-		Udp.begin(inPort);
+	Ethernet.begin(mac, myIp);
+	Udp.begin(inPort);
 }
 
 void sendOneData(char *address, int32_t data) {
@@ -132,6 +134,36 @@ void getStatus(OSCMessage &msg ,int addrOffset) {
 	uint8_t target = constrain(msg.getInt(0),0,3);
 	sendOneData("/status", powerSteps[target].getStatus());
 }
+
+void configStepMode(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	uint8_t stepMode = constrain(msg.getInt(1), STEP_FS, STEP_FS_128);
+	powerSteps[target].configStepMode(stepMode);
+}
+
+void getStepMode(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	sendOneData("/stepMode", powerSteps[target].getStepMode());
+}
+
+void voltageMode(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	uint8_t stepMode = constrain(msg.getInt(1), STEP_FS, STEP_FS_128);
+	powerSteps[target].voltageMode(stepMode);
+}
+
+void currentMode(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	uint8_t stepMode = constrain(msg.getInt(1), STEP_FS, STEP_FS_128);
+	powerSteps[target].currentMode(stepMode);
+
+	int t = 0;
+	powerSteps[target].setHoldTVAL(t);
+	powerSteps[target].setRunTVAL(t);
+	powerSteps[target].setAccTVAL(t);
+	powerSteps[target].setDecTVAL(t);
+}
+
 
 #pragma region kval_commands_osc_listener
 void setKVAL(OSCMessage &msg ,int addrOffset) {
@@ -178,6 +210,59 @@ void getKVAL(OSCMessage &msg ,int addrOffset) {
 	newMes.add((int32_t)powerSteps[target].getRunKVAL());
 	newMes.add((int32_t)powerSteps[target].getAccKVAL());
 	newMes.add((int32_t)powerSteps[target].getDecKVAL());
+	Udp.beginPacket(destIp, outPort);
+	newMes.send(Udp);
+	Udp.endPacket();
+	newMes.empty();
+}
+#pragma endregion
+
+
+#pragma region tval_commands_osc_listener
+void setTVAL(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	int t = msg.getInt(1);
+	t = constrain(t,0,255);
+	powerSteps[target].setHoldTVAL(t);
+	t = msg.getInt(2);
+	t = constrain(t,0,255);
+	powerSteps[target].setRunTVAL(t);
+	t = msg.getInt(3);
+	t = constrain(t,0,255);
+	powerSteps[target].setAccTVAL(t);
+	t = msg.getInt(4);
+	t = constrain(t,0,255);
+	powerSteps[target].setDecTVAL(t);
+}
+void setAccTVAL(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	byte tvalInput = msg.getInt(1);
+	powerSteps[target].setAccTVAL(tvalInput);
+}
+void setDecTVAL(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	byte tvalInput = msg.getInt(1);
+	powerSteps[target].setDecTVAL(tvalInput);
+}
+void setRunTVAL(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	byte tvalInput = msg.getInt(1);
+	powerSteps[target].setRunTVAL(tvalInput);
+}
+void setHoldTVAL(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	byte tvalInput = msg.getInt(1);
+	powerSteps[target].setHoldTVAL(tvalInput);
+}
+void getTVAL(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+
+	OSCMessage newMes("/tval");
+	newMes.add((int32_t)target);
+	newMes.add((int32_t)powerSteps[target].getHoldTVAL());
+	newMes.add((int32_t)powerSteps[target].getRunTVAL());
+	newMes.add((int32_t)powerSteps[target].getAccTVAL());
+	newMes.add((int32_t)powerSteps[target].getDecTVAL());
 	Udp.beginPacket(destIp, outPort);
 	newMes.send(Udp);
 	Udp.endPacket();
@@ -415,60 +500,71 @@ void OSCMsgReceive() {
 
 			msgIN.route("/getStatus", getStatus);
 
+			msgIN.route("/configStepMode", configStepMode);
+			msgIN.route("/getStepMode", getStepMode);
+
+			msgIN.route("/voltageMode", voltageMode);
+			msgIN.route("/currentMode", currentMode);
+
 			msgIN.route("/setSpdProfile",setSpdProfile);
-
-    		msgIN.route("/setMaxSpeed", setMaxSpeed);
-    		msgIN.route("/setMinSpeed", setMinSpeed);
-    		msgIN.route("/setFullSpeed", setFullSpeed);
-    		msgIN.route("/setAcc", setAcc);
-    		msgIN.route("/setDec", setDec);
-
-    		msgIN.route("/setSpdProfileRaw",setSpdProfileRaw);
-
-    		msgIN.route("/setMaxSpeedRaw", setMaxSpeedRaw);
-    		msgIN.route("/setMinSpeedRaw", setMinSpeedRaw);
-    		msgIN.route("/setFullSpeedRaw", setFullSpeedRaw);
-    		msgIN.route("/setAccRaw", setAccRaw);
-    		msgIN.route("/setDecRaw", setDecRaw);
-
+			msgIN.route("/setMaxSpeed", setMaxSpeed);
+			msgIN.route("/setMinSpeed", setMinSpeed);
+			msgIN.route("/setFullSpeed", setFullSpeed);
+			msgIN.route("/setAcc", setAcc);
+			msgIN.route("/setDec", setDec);
 			msgIN.route("/getSpdProfile",getSpdProfile);
+
+			msgIN.route("/setSpdProfileRaw",setSpdProfileRaw);
+			msgIN.route("/setMaxSpeedRaw", setMaxSpeedRaw);
+			msgIN.route("/setMinSpeedRaw", setMinSpeedRaw);
+			msgIN.route("/setFullSpeedRaw", setFullSpeedRaw);
+			msgIN.route("/setAccRaw", setAccRaw);
+			msgIN.route("/setDecRaw", setDecRaw);
 			msgIN.route("/getSpdProfileRaw",getSpdProfileRaw);
 
 			msgIN.route("/setKVAL",setKVAL);
 			msgIN.route("/setAccKVAL", setAccKVAL);
-    		msgIN.route("/setDecKVAL", setDecKVAL);
-    		msgIN.route("/setRunKVAL", setRunKVAL);
-    		msgIN.route("/setHoldKVAL", setHoldKVAL);
+			msgIN.route("/setDecKVAL", setDecKVAL);
+			msgIN.route("/setRunKVAL", setRunKVAL);
+			msgIN.route("/setHoldKVAL", setHoldKVAL);
 
 			msgIN.route("/getKVAL",getKVAL);
 
+			msgIN.route("/setTVAL",setTVAL);
+			msgIN.route("/setAccTVAL", setAccTVAL);
+			msgIN.route("/setDecTVAL", setDecTVAL);
+			msgIN.route("/setRunTVAL", setRunTVAL);
+			msgIN.route("/setHoldTVAL", setHoldTVAL);
+
+			msgIN.route("/getTVAL",getTVAL);
+
 			msgIN.route("/getPos", getPos);
-    		msgIN.route("/getMark", getMark);
-    		msgIN.route("/run", run);
-    		msgIN.route("/runRaw", runRaw);
-    		msgIN.route("/move", move);
-    		msgIN.route("/goTo", goTo);
-    		msgIN.route("/goToDir", goToDir);
-    		msgIN.route("/goUntil", goUntil);
-    		msgIN.route("/goUntilRaw", goUntilRaw);
-    		msgIN.route("/releaseSw", releaseSw);
-    		msgIN.route("/goHome", goHome);
-    		msgIN.route("/goMark", goMark);
-    		msgIN.route("/setMark", setMark);
-    		msgIN.route("/setPos", setPos);
-    		msgIN.route("/resetPos", resetPos);
-    		msgIN.route("/resetDev", resetDev);
-    		msgIN.route("/softStop", softStop);
-    		msgIN.route("/hardStop", hardStop);
-    		msgIN.route("/softHiZ", softHiZ);
-    		msgIN.route("/hardHiZ", hardHiZ);
+			msgIN.route("/getMark", getMark);
+			msgIN.route("/run", run);
+			msgIN.route("/runRaw", runRaw);
+			msgIN.route("/move", move);
+			msgIN.route("/goTo", goTo);
+			msgIN.route("/goToDir", goToDir);
+			msgIN.route("/goUntil", goUntil);
+			msgIN.route("/goUntilRaw", goUntilRaw);
+			msgIN.route("/releaseSw", releaseSw);
+			msgIN.route("/goHome", goHome);
+			msgIN.route("/goMark", goMark);
+			msgIN.route("/setMark", setMark);
+			msgIN.route("/setPos", setPos);
+			msgIN.route("/resetPos", resetPos);
+			msgIN.route("/resetDev", resetDev);
+			msgIN.route("/softStop", softStop);
+			msgIN.route("/hardStop", hardStop);
+			msgIN.route("/softHiZ", softHiZ);
+			msgIN.route("/hardHiZ", hardHiZ);
 		}
 	}
 }
 
 void swCheck()
 {
-  static byte lastVal;
+	static byte lastVal;
 
 }
 void loop()
