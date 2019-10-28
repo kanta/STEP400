@@ -44,6 +44,15 @@ powerSTEP powerSteps[] = {
 
 const uint8_t dipSwPin[8] = {A5,SCL,7u,SDA,2u,9u,3u,0u};
 
+bool isOriginReturn[4];
+bool isSendBusy[4] = {false, false, false, false};
+bool isSendSw[4] = {false, false, false, false};
+uint8_t lastDir[4];
+uint8_t lastSw[4];
+uint8_t lastBusy[4];
+
+uint64_t lastTime;
+
 void setup()
 {
 	pinMode(ledPin, OUTPUT);
@@ -68,7 +77,7 @@ void setup()
 
 	// Start SPI for PowerSTEP
 	powerStepSPI.begin();
-	powerStepSPI.setClockDivider(4); // default 4
+	powerStepSPI.setClockDivider(SPI_CLOCK_DIV128); // default 4
 	pinPeripheral(POWERSTEP_MOSI, PIO_SERCOM_ALT);
 	pinPeripheral(POWERSTEP_SCK, PIO_SERCOM_ALT);
 	pinPeripheral(POWERSTEP_MISO , PIO_SERCOM_ALT);
@@ -78,8 +87,8 @@ void setup()
 	for (uint8_t i=0; i<4; i++)
 	{
 		powerSteps[i].SPIPortConnect(&powerStepSPI);
-		//powerSteps[i].configStepMode(STEP_FS_128);
-		powerSteps[i].configStepMode(STEP_FS);
+		powerSteps[i].configStepMode(STEP_FS_128);
+
 		powerSteps[i].setMaxSpeed(10000);
 		powerSteps[i].setFullSpeed(2000);
 		powerSteps[i].setAcc(2000);
@@ -124,15 +133,46 @@ void sendOneData(char *address, int32_t data) {
 	newMes.empty();
 }
 
+void sendOneData(char *address, uint8_t target, int32_t data) {
+	OSCMessage newMes(address);
+	newMes.add((int32_t)target);
+	newMes.add((int32_t)data);
+	Udp.beginPacket(destIp, outPort);
+	newMes.send(Udp);
+	Udp.endPacket();
+	newMes.empty();
+}
+
 void setDestIp(OSCMessage &msg ,int addrOffset) {
 	destIp = Udp.remoteIP();
 	sendOneData("/newDestIp", (int32_t)destIp[3]);
 	digitalWrite(ledPin, !digitalRead(ledPin));
 }
 
+void setSwFlag(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	uint8_t flag = constrain(msg.getInt(1),0,3);
+	if (flag == 0) {
+		isSendSw[target] = false;
+		} else {
+		isSendSw[target] = true;
+	}
+}
+
+void setBusyFlag(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	uint8_t flag = constrain(msg.getInt(1),0,3);
+	if (flag == 0) {
+		isSendBusy[target] = false;
+		} else {
+		isSendBusy[target] = true;
+	}
+}
+
+
 void getStatus(OSCMessage &msg ,int addrOffset) {
 	uint8_t target = constrain(msg.getInt(0),0,3);
-	sendOneData("/status", powerSteps[target].getStatus());
+	sendOneData("/status", target, powerSteps[target].getStatus());
 }
 
 void configStepMode(OSCMessage &msg ,int addrOffset) {
@@ -143,7 +183,7 @@ void configStepMode(OSCMessage &msg ,int addrOffset) {
 
 void getStepMode(OSCMessage &msg ,int addrOffset) {
 	uint8_t target = constrain(msg.getInt(0),0,3);
-	sendOneData("/stepMode", powerSteps[target].getStepMode());
+	sendOneData("/stepMode", target, powerSteps[target].getStepMode());
 }
 
 void voltageMode(OSCMessage &msg ,int addrOffset) {
@@ -382,11 +422,11 @@ void getSpdProfileRaw(OSCMessage &msg ,int addrOffset) {
 
 void getPos(OSCMessage &msg ,int addrOffset) {
 	uint8_t target = constrain(msg.getInt(0),0,3);
-	sendOneData("/pos", powerSteps[target].getPos());
+	sendOneData("/pos", target, powerSteps[target].getPos());
 }
 void getMark(OSCMessage &msg ,int addrOffset) {
 	uint8_t target = constrain(msg.getInt(0),0,3);
-	sendOneData("/mark", powerSteps[target].getMark());
+	sendOneData("/mark", target, powerSteps[target].getMark());
 }
 
 void run(OSCMessage &msg ,int addrOffset) {
@@ -497,6 +537,8 @@ void OSCMsgReceive() {
 
 		if(!msgIN.hasError()){
 			msgIN.route("/setDestIp",setDestIp);
+			msgIN.route("/setSwFlag", setSwFlag);
+			msgIN.route("/setBusyFlag", setBusyFlag);
 
 			msgIN.route("/getStatus", getStatus);
 
@@ -562,14 +604,69 @@ void OSCMsgReceive() {
 	}
 }
 
-void swCheck()
+void statusCheck()
 {
-	static byte lastVal;
+	for(uint8_t i = 0; i < 4; i ++) {
+		if (!isOriginReturn[i]) {
+			int status = powerSteps[i].getStatus();
+			uint8_t sw = (status & 0b100) >> 2;
+			uint8_t busy = (status & 0b10) >> 1;
+			uint8_t dir = (status & 0b10000) >> 4;
 
+			if (i == 0 && status != 0b1110001000010011) {
+				SerialUSB.println(status, BIN);
+				SerialUSB.print(sw);
+				SerialUSB.print(" ");
+				SerialUSB.print(busy);
+				SerialUSB.print(" ");
+				SerialUSB.print(dir);
+				SerialUSB.println();
+			}
+
+			if (sw != lastSw[i]) {
+				if (isSendSw[i]) {
+					sendSw(i, sw, dir);
+				}
+				lastSw[i] = sw;
+			}
+			if (busy != lastBusy[i]) {
+				if (isSendBusy[i]) {
+					sendBusy(i, busy);
+				}
+
+				lastBusy[i] = busy;
+			}
+		}
+	}
+}
+
+void sendSw(uint8_t target, uint8_t sw, uint8_t dir) {
+	OSCMessage newMes("/sw");
+	newMes.add((int32_t)target);
+	newMes.add((int32_t)sw);
+	newMes.add((int32_t)dir);
+	Udp.beginPacket(destIp, outPort);
+	newMes.send(Udp);
+	Udp.endPacket();
+	newMes.empty();
+}
+void sendBusy(uint8_t target, uint8_t busy) {
+	OSCMessage newMes("/busy");
+	newMes.add((int32_t)target);
+	newMes.add((int32_t)busy);
+	Udp.beginPacket(destIp, outPort);
+	newMes.send(Udp);
+	Udp.endPacket();
+	newMes.empty();
 }
 void loop()
 {
-	OSCMsgReceive();
-	swCheck();
+	uint64_t time = millis();
+	if (0 < time - lastTime) {
+		statusCheck();
+		lastTime = time;
+	}
 
+
+	OSCMsgReceive();
 }
