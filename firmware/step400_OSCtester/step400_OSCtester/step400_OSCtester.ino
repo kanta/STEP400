@@ -613,7 +613,7 @@ void statusCheck()
 			uint8_t busy = (status & 0b10) >> 1;
 			uint8_t dir = (status & 0b10000) >> 4;
 
-			if (i == 0 && status != 0b1110001000010011) {
+			if (i == 0 && status != 0b1110001000000111) {
 				SerialUSB.println(status, BIN);
 				SerialUSB.print(sw);
 				SerialUSB.print(" ");
