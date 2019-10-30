@@ -4,12 +4,12 @@
 * Created: 9/19/2019 4:53:04 PM
 * Author: kanta
 */
-
+#include <cstdint>
 #include <Arduino.h>
 #include <Ethernet.h>
 #include <OSCMessage.h>
 //#include <powerSTEP01ArduinoLibrary.h>
-#include "LocalLibraries/powerSTEP01_Arduino_Library/src/powerSTEP01ArduinoLibrary.h"
+#include "powerSTEP01ArduinoLibrary.h"
 #include <SPI.h>
 #include "wiring_private.h" // pinPeripheral() function
 
@@ -59,7 +59,7 @@ void setup()
 	pinMode(SD_CS, OUTPUT);
 
 	// Start serial
-	SerialUSB.begin(9600);
+	SerialUSB.begin(115200);
 	SerialUSB.println("powerSTEP01 Arduino control initialising...");
 
 	// Prepare pins
@@ -613,7 +613,8 @@ void statusCheck()
 			uint8_t busy = (status & 0b10) >> 1;
 			uint8_t dir = (status & 0b10000) >> 4;
 
-			if (i == 0 && status != 0b1110001000000111) {
+			const uint8_t mask = 0xFF;
+			if (i == 0 && !(status & mask)) {
 				SerialUSB.println(status, BIN);
 				SerialUSB.print(sw);
 				SerialUSB.print(" ");
