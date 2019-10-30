@@ -458,7 +458,7 @@ void goToDir(OSCMessage &msg ,int addrOffset) {
 	unsigned long pos = msg.getInt(2);
 	powerSteps[target].goToDir(dir, pos);
 }
-// todo: action�ĂȂ�
+// todo: action‚Ä‚È‚É
 void goUntil(OSCMessage &msg ,int addrOffset) {
 	uint8_t target = constrain(msg.getInt(0), 0, 3);
 	uint8_t action = msg.getInt(1);
