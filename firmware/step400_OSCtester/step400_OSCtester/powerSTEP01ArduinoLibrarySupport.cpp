@@ -327,7 +327,7 @@ byte powerSTEP::SPIXfer(byte data)
   }
   dataPacket[_position] = data;
   digitalWrite(_CSPin, LOW);  
-  _SPI->beginTransaction(SPISettings(500000, MSBFIRST, SPI_MODE3));
+  _SPI->beginTransaction(SPISettings(4000000, MSBFIRST, SPI_MODE3));
   _SPI->transfer(dataPacket, _numBoards);
   _SPI->endTransaction();
   digitalWrite(_CSPin, HIGH);
