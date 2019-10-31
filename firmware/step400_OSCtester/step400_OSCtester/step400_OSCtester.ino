@@ -5,12 +5,13 @@
 * Author: kanta
 */
 #include <cstdint>
+#include <OSCMessage.h>
 #include <Arduino.h>
 #include <Ethernet.h>
-#include <OSCMessage.h>
-//#include <powerSTEP01ArduinoLibrary.h>
-#include "powerSTEP01ArduinoLibrary.h"
 #include <SPI.h>
+
+#include "powerSTEP01ArduinoLibrary.h"
+
 #include "wiring_private.h" // pinPeripheral() function
 
 #define ledPin	13
@@ -30,6 +31,9 @@ SPIClass powerStepSPI (&sercom3, POWERSTEP_MISO, POWERSTEP_SCK, POWERSTEP_MOSI, 
 #define POWERSTEP_CS_PIN A0
 #define POWERSTEP_RESET_PIN A2
 
+#define NUM_POWER_STEP (4)
+
+
 
 // powerSTEP library instance, parameters are distance from the end of a daisy-chain
 // of drivers, !CS pin, !STBY/!Reset pin
@@ -44,17 +48,23 @@ powerSTEP powerSteps[] = {
 
 const uint8_t dipSwPin[8] = {A5,SCL,7u,SDA,2u,9u,3u,0u};
 
-bool isOriginReturn[4];
-bool isSendBusy[4] = {false, false, false, false};
-bool isSendSw[4] = {false, false, false, false};
-uint8_t lastDir[4];
-uint8_t lastSw[4];
-uint8_t lastBusy[4];
+bool isOriginReturn[NUM_POWER_STEP];
+bool isSendBusy[NUM_POWER_STEP];
+bool isSendSw[NUM_POWER_STEP];
+uint8_t lastDir[NUM_POWER_STEP];
+uint8_t lastSw[NUM_POWER_STEP];
+uint8_t lastBusy[NUM_POWER_STEP];
 
 uint64_t lastTime;
 
 void setup()
 {
+	for (auto i = 0; i < NUM_POWER_STEP; ++i) {
+		isSendBusy[i]  = false;
+		isSendSw[i] = false;
+	}
+
+	
 	pinMode(ledPin, OUTPUT);
 	pinMode(SD_CS, OUTPUT);
 
@@ -72,19 +82,20 @@ void setup()
 	// Reset powerSTEP and set CS
 	digitalWrite(POWERSTEP_RESET_PIN, HIGH);
 	digitalWrite(POWERSTEP_RESET_PIN, LOW);
+	delay(100);
 	digitalWrite(POWERSTEP_RESET_PIN, HIGH);
 	digitalWrite(POWERSTEP_CS_PIN, HIGH);
 
 	// Start SPI for PowerSTEP
 	powerStepSPI.begin();
-	powerStepSPI.setClockDivider(SPI_CLOCK_DIV128); // default 4
+	// powerStepSPI.setClockDivider(SPI_CLOCK_DIV128); // default 4
 	pinPeripheral(POWERSTEP_MOSI, PIO_SERCOM_ALT);
 	pinPeripheral(POWERSTEP_SCK, PIO_SERCOM_ALT);
 	pinPeripheral(POWERSTEP_MISO , PIO_SERCOM_ALT);
 	powerStepSPI.setDataMode(SPI_MODE3);
 	delay(100);
 	// Configure powerSTEP
-	for (uint8_t i=0; i<4; i++)
+	for (uint8_t i=0; i<NUM_POWER_STEP; i++)
 	{
 		powerSteps[i].SPIPortConnect(&powerStepSPI);
 		powerSteps[i].configStepMode(STEP_FS_128);
@@ -603,10 +614,16 @@ void OSCMsgReceive() {
 		}
 	}
 }
-
+int checkCounter = 0; 
+int numberOfErrors = 0;
 void statusCheck()
 {
-	for(uint8_t i = 0; i < 4; i ++) {
+	if (sercom3.isBufferOverflowErrorSPI()) {
+		SerialUSB.println("SPI buffer overflow!!");
+	}
+
+	checkCounter++;
+	for(uint8_t i = 0; i < NUM_POWER_STEP; i ++) {
 		if (!isOriginReturn[i]) {
 			int status = powerSteps[i].getStatus();
 			uint8_t sw = (status & 0b100) >> 2;
@@ -614,14 +631,24 @@ void statusCheck()
 			uint8_t dir = (status & 0b10000) >> 4;
 
 			const uint8_t mask = 0xFF;
-			if (i == 0 && !(status & mask)) {
+			
+			if (!(status & mask)) {
+				numberOfErrors++;
+				SerialUSB.print("status error@ ");
+				SerialUSB.println(i);
 				SerialUSB.println(status, BIN);
-				SerialUSB.print(sw);
-				SerialUSB.print(" ");
-				SerialUSB.print(busy);
-				SerialUSB.print(" ");
-				SerialUSB.print(dir);
-				SerialUSB.println();
+				SerialUSB.print("total: ");
+				SerialUSB.print(checkCounter);
+				SerialUSB.print(" error number: ");
+				SerialUSB.println(numberOfErrors);
+
+
+				//SerialUSB.print(sw);
+				//SerialUSB.print(" ");
+				//SerialUSB.print(busy);
+				//SerialUSB.print(" ");
+				//SerialUSB.print(dir);
+				//SerialUSB.println();
 			}
 
 			if (sw != lastSw[i]) {
@@ -669,5 +696,6 @@ void loop()
 	}
 
 
+	delay(10);
 	OSCMsgReceive();
 }

@@ -242,7 +242,7 @@ int powerSTEP::getStatus()
 {
   int temp = 0;
   byte* bytePointer = (byte*)&temp;
-  SPIXfer(GET_STATUS);
+  SPIXfer(GET_STATUS);  
   bytePointer[1] = SPIXfer(0);
   bytePointer[0] = SPIXfer(0);
   return temp;
