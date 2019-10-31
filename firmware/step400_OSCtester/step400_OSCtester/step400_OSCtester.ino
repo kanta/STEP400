@@ -111,8 +111,8 @@ void setup()
 		powerSteps[i].setVoltageComp(VS_COMP_DISABLE);
 		powerSteps[i].setSwitchMode(SW_USER);
 		//powerSteps[i].setSwitchMode(SW_HARD_STOP);
-		powerSteps[i].setOscMode(EXT_24MHZ_OSCOUT_INVERT);
-		//powerSteps[i].setOscMode(INT_16MHZ);
+		//powerSteps[i].setOscMode(EXT_24MHZ_OSCOUT_INVERT);
+	  powerSteps[i].setOscMode(INT_16MHZ);
 		powerSteps[i].setRunKVAL(64);
 		powerSteps[i].setAccKVAL(64);
 		powerSteps[i].setDecKVAL(64);
@@ -614,42 +614,104 @@ void OSCMsgReceive() {
 		}
 	}
 }
-int checkCounter = 0; 
-int numberOfErrors = 0;
+
+uint16_t getStatus_Strict(const int index) 
+{
+  const auto numGetStatus = 3;
+  uint16_t status[numGetStatus] = {0};
+
+  for (auto&& s: status) {
+    s = powerSteps[index].getStatus();
+  }
+
+  auto getBitVal = [](const uint16_t input, const int bitIndex) {
+    return (input >> bitIndex) & 0x01;
+  };
+
+  auto setBitVal = [](const uint16_t input, const int bitIndex, const int value) -> uint16_t {
+    if (value) {
+      return input | (1 << bitIndex);
+    }
+    return (input & ~(1 << bitIndex));
+  };
+  
+  auto findImportantValue = [&](uint16_t* const input, const int sizeOfInput, const int bitIndex, const int importantValue) {  
+    for (auto i = 0; i < sizeOfInput; ++i) {
+      if (getBitVal(input[i], bitIndex)) {
+        return importantValue;
+      }
+    }
+
+    return importantValue == 1 ? 0 : 1;
+  };
+
+  auto findMajority = [&] (uint16_t* const input, const int sizeOfInput, const int bitIndex) {
+    struct occurrence {
+      int num_zeros;
+      int num_ones;
+      occurrence() : num_zeros(0), num_ones(0) {}
+    };
+
+    occurrence o;
+    
+    for (auto i = 0; i < sizeOfInput; ++i) {
+      const auto v = getBitVal(input[i], bitIndex);
+      if (v == 0) {
+        o.num_zeros++;
+      } else {
+        o.num_ones++;
+      }
+    }
+    
+    return o.num_zeros > o.num_ones ? 0 : 1;
+  };
+
+  uint16_t result = 0;
+  result = setBitVal(result, 15, findMajority(status, numGetStatus, 15)); // STALL_A
+  result = setBitVal(result, 14, findMajority(status, numGetStatus, 14)); // STALL_B
+  result = setBitVal(result, 13, findImportantValue(status, numGetStatus, 13, 0)); // OCD
+  result = setBitVal(result, 12, findMajority(status, numGetStatus, 12)); // TH_STATUS(Hi)
+  result = setBitVal(result, 11, findMajority(status, numGetStatus, 11)); // TH_STATUS(Lo)
+  result = setBitVal(result, 10, findImportantValue(status, numGetStatus, 10, 0)); // UVLO_ADC
+  result = setBitVal(result,  9, findImportantValue(status, numGetStatus,  9, 0)); // UVLO
+  result = setBitVal(result,  8, findImportantValue(status, numGetStatus,  8, 1)); // STCK_MOD
+  result = setBitVal(result,  7, findImportantValue(status, numGetStatus,  7, 1)); // CMD_ERROR
+  result = setBitVal(result,  6, findMajority(status, numGetStatus,  6)); // MOT_STATUS(Hi)
+  result = setBitVal(result,  5, findMajority(status, numGetStatus,  5)); // MOT_STATUS(Lo)
+  result = setBitVal(result,  4, findMajority(status, numGetStatus,  4)); // DIR
+  result = setBitVal(result,  3, findImportantValue(status, numGetStatus,  3, 1)); // SW_EVN
+  result = setBitVal(result,  2, findImportantValue(status, numGetStatus,  2, 1)); // SW_F
+  result = setBitVal(result,  1, findImportantValue(status, numGetStatus,  1, 0)); // BUSY
+  result = setBitVal(result,  0, findMajority(status, numGetStatus,  0)); // HiZ
+  
+  return result;
+}
+
 void statusCheck()
 {
-	if (sercom3.isBufferOverflowErrorSPI()) {
-		SerialUSB.println("SPI buffer overflow!!");
-	}
-
-	checkCounter++;
 	for(uint8_t i = 0; i < NUM_POWER_STEP; i ++) {
 		if (!isOriginReturn[i]) {
-			int status = powerSteps[i].getStatus();
+      const auto status = getStatus_Strict(i);
+      
 			uint8_t sw = (status & 0b100) >> 2;
 			uint8_t busy = (status & 0b10) >> 1;
 			uint8_t dir = (status & 0b10000) >> 4;
 
 			const uint8_t mask = 0xFF;
 			
-			if (!(status & mask)) {
-				numberOfErrors++;
-				SerialUSB.print("status error@ ");
-				SerialUSB.println(i);
+		//	if (!(status & mask)) {
+				SerialUSB.print("status@ ");
+				SerialUSB.print(i);
+        SerialUSB.print(" = ");
 				SerialUSB.println(status, BIN);
-				SerialUSB.print("total: ");
-				SerialUSB.print(checkCounter);
-				SerialUSB.print(" error number: ");
-				SerialUSB.println(numberOfErrors);
-
-
+        delay(1000);
 				//SerialUSB.print(sw);
 				//SerialUSB.print(" ");
 				//SerialUSB.print(busy);
 				//SerialUSB.print(" ");
 				//SerialUSB.print(dir);
 				//SerialUSB.println();
-			}
+			//}
 
 			if (sw != lastSw[i]) {
 				if (isSendSw[i]) {
@@ -696,6 +758,6 @@ void loop()
 	}
 
 
-	delay(10);
+	//delay(10);
 	OSCMsgReceive();
 }
