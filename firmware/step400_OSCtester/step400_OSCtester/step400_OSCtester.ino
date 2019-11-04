@@ -4,13 +4,14 @@
 * Created: 9/19/2019 4:53:04 PM
 * Author: kanta
 */
-
+#include <cstdint>
+#include <OSCMessage.h>
 #include <Arduino.h>
 #include <Ethernet.h>
-#include <OSCMessage.h>
-//#include <powerSTEP01ArduinoLibrary.h>
-#include "LocalLibraries/powerSTEP01_Arduino_Library/src/powerSTEP01ArduinoLibrary.h"
 #include <SPI.h>
+
+#include "powerSTEP01ArduinoLibrary.h"
+
 #include "wiring_private.h" // pinPeripheral() function
 
 #define ledPin	13
@@ -30,6 +31,9 @@ SPIClass powerStepSPI (&sercom3, POWERSTEP_MISO, POWERSTEP_SCK, POWERSTEP_MOSI, 
 #define POWERSTEP_CS_PIN A0
 #define POWERSTEP_RESET_PIN A2
 
+#define NUM_POWER_STEP (4)
+
+
 
 // powerSTEP library instance, parameters are distance from the end of a daisy-chain
 // of drivers, !CS pin, !STBY/!Reset pin
@@ -44,22 +48,28 @@ powerSTEP powerSteps[] = {
 
 const uint8_t dipSwPin[8] = {A5,SCL,7u,SDA,2u,9u,3u,0u};
 
-bool isOriginReturn[4];
-bool isSendBusy[4] = {false, false, false, false};
-bool isSendSw[4] = {false, false, false, false};
-uint8_t lastDir[4];
-uint8_t lastSw[4];
-uint8_t lastBusy[4];
+bool isOriginReturn[NUM_POWER_STEP];
+bool isSendBusy[NUM_POWER_STEP];
+bool isSendSw[NUM_POWER_STEP];
+uint8_t lastDir[NUM_POWER_STEP];
+uint8_t lastSw[NUM_POWER_STEP];
+uint8_t lastBusy[NUM_POWER_STEP];
 
 uint64_t lastTime;
 
 void setup()
 {
+	for (auto i = 0; i < NUM_POWER_STEP; ++i) {
+		isSendBusy[i]  = false;
+		isSendSw[i] = false;
+	}
+
+	
 	pinMode(ledPin, OUTPUT);
 	pinMode(SD_CS, OUTPUT);
 
 	// Start serial
-	SerialUSB.begin(9600);
+	SerialUSB.begin(115200);
 	SerialUSB.println("powerSTEP01 Arduino control initialising...");
 
 	// Prepare pins
@@ -72,19 +82,20 @@ void setup()
 	// Reset powerSTEP and set CS
 	digitalWrite(POWERSTEP_RESET_PIN, HIGH);
 	digitalWrite(POWERSTEP_RESET_PIN, LOW);
+	delay(100);
 	digitalWrite(POWERSTEP_RESET_PIN, HIGH);
 	digitalWrite(POWERSTEP_CS_PIN, HIGH);
 
 	// Start SPI for PowerSTEP
 	powerStepSPI.begin();
-	powerStepSPI.setClockDivider(SPI_CLOCK_DIV128); // default 4
+	// powerStepSPI.setClockDivider(SPI_CLOCK_DIV128); // default 4
 	pinPeripheral(POWERSTEP_MOSI, PIO_SERCOM_ALT);
 	pinPeripheral(POWERSTEP_SCK, PIO_SERCOM_ALT);
 	pinPeripheral(POWERSTEP_MISO , PIO_SERCOM_ALT);
 	powerStepSPI.setDataMode(SPI_MODE3);
 	delay(100);
 	// Configure powerSTEP
-	for (uint8_t i=0; i<4; i++)
+	for (uint8_t i=0; i<NUM_POWER_STEP; i++)
 	{
 		powerSteps[i].SPIPortConnect(&powerStepSPI);
 		powerSteps[i].configStepMode(STEP_FS_128);
@@ -100,8 +111,8 @@ void setup()
 		powerSteps[i].setVoltageComp(VS_COMP_DISABLE);
 		powerSteps[i].setSwitchMode(SW_USER);
 		//powerSteps[i].setSwitchMode(SW_HARD_STOP);
-		powerSteps[i].setOscMode(EXT_24MHZ_OSCOUT_INVERT);
-		//powerSteps[i].setOscMode(INT_16MHZ);
+		//powerSteps[i].setOscMode(EXT_24MHZ_OSCOUT_INVERT);
+	  powerSteps[i].setOscMode(INT_16MHZ);
 		powerSteps[i].setRunKVAL(64);
 		powerSteps[i].setAccKVAL(64);
 		powerSteps[i].setDecKVAL(64);
@@ -458,7 +469,7 @@ void goToDir(OSCMessage &msg ,int addrOffset) {
 	unsigned long pos = msg.getInt(2);
 	powerSteps[target].goToDir(dir, pos);
 }
-// todo: action�ĂȂ�
+// todo: action‚Ä‚È‚É
 void goUntil(OSCMessage &msg ,int addrOffset) {
 	uint8_t target = constrain(msg.getInt(0), 0, 3);
 	uint8_t action = msg.getInt(1);
@@ -604,24 +615,103 @@ void OSCMsgReceive() {
 	}
 }
 
+uint16_t getStatus_Strict(const int index) 
+{
+  const auto numGetStatus = 3;
+  uint16_t status[numGetStatus] = {0};
+
+  for (auto&& s: status) {
+    s = powerSteps[index].getStatus();
+  }
+
+  auto getBitVal = [](const uint16_t input, const int bitIndex) {
+    return (input >> bitIndex) & 0x01;
+  };
+
+  auto setBitVal = [](const uint16_t input, const int bitIndex, const int value) -> uint16_t {
+    if (value) {
+      return input | (1 << bitIndex);
+    }
+    return (input & ~(1 << bitIndex));
+  };
+  
+  auto findImportantValue = [&](uint16_t* const input, const int sizeOfInput, const int bitIndex, const int importantValue) {  
+    for (auto i = 0; i < sizeOfInput; ++i) {
+      if (getBitVal(input[i], bitIndex)) {
+        return importantValue;
+      }
+    }
+
+    return importantValue == 1 ? 0 : 1;
+  };
+
+  auto findMajority = [&] (uint16_t* const input, const int sizeOfInput, const int bitIndex) {
+    struct occurrence {
+      int num_zeros;
+      int num_ones;
+      occurrence() : num_zeros(0), num_ones(0) {}
+    };
+
+    occurrence o;
+    
+    for (auto i = 0; i < sizeOfInput; ++i) {
+      const auto v = getBitVal(input[i], bitIndex);
+      if (v == 0) {
+        o.num_zeros++;
+      } else {
+        o.num_ones++;
+      }
+    }
+    
+    return o.num_zeros > o.num_ones ? 0 : 1;
+  };
+
+  uint16_t result = 0;
+  result = setBitVal(result, 15, findMajority(status, numGetStatus, 15)); // STALL_A
+  result = setBitVal(result, 14, findMajority(status, numGetStatus, 14)); // STALL_B
+  result = setBitVal(result, 13, findImportantValue(status, numGetStatus, 13, 0)); // OCD
+  result = setBitVal(result, 12, findMajority(status, numGetStatus, 12)); // TH_STATUS(Hi)
+  result = setBitVal(result, 11, findMajority(status, numGetStatus, 11)); // TH_STATUS(Lo)
+  result = setBitVal(result, 10, findImportantValue(status, numGetStatus, 10, 0)); // UVLO_ADC
+  result = setBitVal(result,  9, findImportantValue(status, numGetStatus,  9, 0)); // UVLO
+  result = setBitVal(result,  8, findImportantValue(status, numGetStatus,  8, 1)); // STCK_MOD
+  result = setBitVal(result,  7, findImportantValue(status, numGetStatus,  7, 1)); // CMD_ERROR
+  result = setBitVal(result,  6, findMajority(status, numGetStatus,  6)); // MOT_STATUS(Hi)
+  result = setBitVal(result,  5, findMajority(status, numGetStatus,  5)); // MOT_STATUS(Lo)
+  result = setBitVal(result,  4, findMajority(status, numGetStatus,  4)); // DIR
+  result = setBitVal(result,  3, findImportantValue(status, numGetStatus,  3, 1)); // SW_EVN
+  result = setBitVal(result,  2, findImportantValue(status, numGetStatus,  2, 1)); // SW_F
+  result = setBitVal(result,  1, findImportantValue(status, numGetStatus,  1, 0)); // BUSY
+  result = setBitVal(result,  0, findMajority(status, numGetStatus,  0)); // HiZ
+  
+  return result;
+}
+
 void statusCheck()
 {
-	for(uint8_t i = 0; i < 4; i ++) {
+	for(uint8_t i = 0; i < NUM_POWER_STEP; i ++) {
 		if (!isOriginReturn[i]) {
-			int status = powerSteps[i].getStatus();
+      const auto status = getStatus_Strict(i);
+      
 			uint8_t sw = (status & 0b100) >> 2;
 			uint8_t busy = (status & 0b10) >> 1;
 			uint8_t dir = (status & 0b10000) >> 4;
 
-			if (i == 0 && status != 0b1110001000010011) {
+			const uint8_t mask = 0xFF;
+			
+		//	if (!(status & mask)) {
+				SerialUSB.print("status@ ");
+				SerialUSB.print(i);
+        SerialUSB.print(" = ");
 				SerialUSB.println(status, BIN);
-				SerialUSB.print(sw);
-				SerialUSB.print(" ");
-				SerialUSB.print(busy);
-				SerialUSB.print(" ");
-				SerialUSB.print(dir);
-				SerialUSB.println();
-			}
+        delay(1000);
+				//SerialUSB.print(sw);
+				//SerialUSB.print(" ");
+				//SerialUSB.print(busy);
+				//SerialUSB.print(" ");
+				//SerialUSB.print(dir);
+				//SerialUSB.println();
+			//}
 
 			if (sw != lastSw[i]) {
 				if (isSendSw[i]) {
@@ -668,5 +758,6 @@ void loop()
 	}
 
 
+	//delay(10);
 	OSCMsgReceive();
 }
