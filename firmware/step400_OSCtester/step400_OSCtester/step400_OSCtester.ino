@@ -729,6 +729,7 @@ void statusCheck()
 	for(uint8_t i = 0; i < NUM_POWER_STEP; i ++) {
 		if (!isOriginReturn[i]) {
 			const auto status = getStatus_Strict(i);
+			//const auto status = powerSteps[i].getStatus();
 
 			uint8_t sw = (status & 0b100) >> 2;
 			uint8_t busy = (status & 0b10) >> 1;
