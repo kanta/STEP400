@@ -15,10 +15,10 @@
 #include "wiring_private.h" // pinPeripheral() function
 
 #define ledPin	13
-byte mac[] = { 0x90, 0xA2, 0xDA, 0xD6, 0xA3, 23 };
-IPAddress myIp(10,0,0,131);
+byte mac[] = { 0x90, 0xA2, 0xDA, 0xD6, 0xA3, 164 };
+IPAddress myIp(10,0,0,164);
 IPAddress destIp(10, 0, 0, 10);
-unsigned int outPort = 20203;
+unsigned int outPort = 20164;
 unsigned int inPort = 20000;
 EthernetUDP Udp;
 
@@ -51,10 +51,10 @@ const uint8_t dipSwPin[8] = {A5,SCL,7u,SDA,2u,9u,3u,0u};
 bool isOriginReturn[NUM_POWER_STEP];
 bool isSendBusy[NUM_POWER_STEP];
 bool isSendSw[NUM_POWER_STEP];
+
 uint8_t lastDir[NUM_POWER_STEP];
 uint8_t lastSw[NUM_POWER_STEP];
 uint8_t lastBusy[NUM_POWER_STEP];
-
 uint64_t lastTime;
 
 void setup()
@@ -64,7 +64,7 @@ void setup()
 		isSendSw[i] = false;
 	}
 
-	
+
 	pinMode(ledPin, OUTPUT);
 	pinMode(SD_CS, OUTPUT);
 
@@ -112,7 +112,7 @@ void setup()
 		powerSteps[i].setSwitchMode(SW_USER);
 		//powerSteps[i].setSwitchMode(SW_HARD_STOP);
 		//powerSteps[i].setOscMode(EXT_24MHZ_OSCOUT_INVERT);
-	  powerSteps[i].setOscMode(INT_16MHZ);
+		powerSteps[i].setOscMode(INT_16MHZ);
 		powerSteps[i].setRunKVAL(64);
 		powerSteps[i].setAccKVAL(64);
 		powerSteps[i].setDecKVAL(64);
@@ -178,6 +178,21 @@ void setBusyFlag(OSCMessage &msg ,int addrOffset) {
 		} else {
 		isSendBusy[target] = true;
 	}
+}
+
+void getSw(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0), 0, 3);
+	sendOneData("/getSw", target, lastSw[target]);
+}
+
+void getBusy(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0), 0, 3);
+	sendOneData("/getBusy", target, lastBusy[target]);
+}
+
+void getDir(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0), 0, 3);
+	sendOneData("/getDir", target, lastDir[target]);
 }
 
 
@@ -321,6 +336,8 @@ void getTVAL(OSCMessage &msg ,int addrOffset) {
 }
 #pragma endregion
 
+
+
 #pragma region speed_commands_osc_listener
 
 void setSpdProfile(OSCMessage &msg ,int addrOffset) {
@@ -429,6 +446,19 @@ void getSpdProfileRaw(OSCMessage &msg ,int addrOffset) {
 }
 #pragma endregion
 
+void getSwMode(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	sendOneData("/getSwMode", target, powerSteps[target].getSwitchMode());
+}
+
+void setSwMode(OSCMessage &msg ,int addrOffset) {
+	uint8_t target = constrain(msg.getInt(0),0,3);
+	uint8_t switchMode = constrain(msg.getInt(0), 0, 255);
+	if (switchMode != SW_HARD_STOP) {
+		switchMode == SW_USER;
+	}
+	powerSteps[target].setSwitchMode(switchMode);
+}
 #pragma region operational_commands_osc_listener
 
 void getPos(OSCMessage &msg ,int addrOffset) {
@@ -475,6 +505,7 @@ void goUntil(OSCMessage &msg ,int addrOffset) {
 	uint8_t action = msg.getInt(1);
 	uint8_t dir = constrain(msg.getInt(2), 0, 1);
 	float stepsPerSec = msg.getFloat(3);
+
 	powerSteps[target].goUntil(action, dir, stepsPerSec);
 }
 void goUntilRaw(OSCMessage &msg ,int addrOffset) {
@@ -552,6 +583,9 @@ void OSCMsgReceive() {
 			msgIN.route("/setBusyFlag", setBusyFlag);
 
 			msgIN.route("/getStatus", getStatus);
+			msgIN.route("/getSw", getSw);
+			msgIN.route("/getBusy", getBusy);
+			msgIN.route("/getDir", getDir);
 
 			msgIN.route("/configStepMode", configStepMode);
 			msgIN.route("/getStepMode", getStepMode);
@@ -591,6 +625,9 @@ void OSCMsgReceive() {
 
 			msgIN.route("/getTVAL",getTVAL);
 
+			msgIN.route("/getSwMode", getSwMode);
+			msgIN.route("/setSwMode", setSwMode);
+
 			msgIN.route("/getPos", getPos);
 			msgIN.route("/getMark", getMark);
 			msgIN.route("/run", run);
@@ -615,105 +652,110 @@ void OSCMsgReceive() {
 	}
 }
 
-uint16_t getStatus_Strict(const int index) 
+uint16_t getStatus_Strict(const int index)
 {
-  const auto numGetStatus = 3;
-  uint16_t status[numGetStatus] = {0};
+	const auto numGetStatus = 3;
+	uint16_t status[numGetStatus] = {0};
 
-  for (auto&& s: status) {
-    s = powerSteps[index].getStatus();
-  }
+	for (auto&& s: status) {
+		s = powerSteps[index].getStatus();
+	}
 
-  auto getBitVal = [](const uint16_t input, const int bitIndex) {
-    return (input >> bitIndex) & 0x01;
-  };
+	auto getBitVal = [](const uint16_t input, const int bitIndex) {
+		return (input >> bitIndex) & 0x01;
+	};
 
-  auto setBitVal = [](const uint16_t input, const int bitIndex, const int value) -> uint16_t {
-    if (value) {
-      return input | (1 << bitIndex);
-    }
-    return (input & ~(1 << bitIndex));
-  };
-  
-  auto findImportantValue = [&](uint16_t* const input, const int sizeOfInput, const int bitIndex, const int importantValue) {  
-    for (auto i = 0; i < sizeOfInput; ++i) {
-      if (getBitVal(input[i], bitIndex)) {
-        return importantValue;
-      }
-    }
+	auto setBitVal = [](const uint16_t input, const int bitIndex, const int value) -> uint16_t {
+		if (value) {
+			return input | (1 << bitIndex);
+		}
+		return (input & ~(1 << bitIndex));
+	};
 
-    return importantValue == 1 ? 0 : 1;
-  };
+	auto findImportantValue = [&](uint16_t* const input, const int sizeOfInput, const int bitIndex, const int importantValue) {
+		for (auto i = 0; i < sizeOfInput; ++i) {
+			if (getBitVal(input[i], bitIndex)) {
+				return importantValue;
+			}
+		}
 
-  auto findMajority = [&] (uint16_t* const input, const int sizeOfInput, const int bitIndex) {
-    struct occurrence {
-      int num_zeros;
-      int num_ones;
-      occurrence() : num_zeros(0), num_ones(0) {}
-    };
+		return importantValue == 1 ? 0 : 1;
+	};
 
-    occurrence o;
-    
-    for (auto i = 0; i < sizeOfInput; ++i) {
-      const auto v = getBitVal(input[i], bitIndex);
-      if (v == 0) {
-        o.num_zeros++;
-      } else {
-        o.num_ones++;
-      }
-    }
-    
-    return o.num_zeros > o.num_ones ? 0 : 1;
-  };
+	auto findMajority = [&] (uint16_t* const input, const int sizeOfInput, const int bitIndex) {
+		struct occurrence {
+			int num_zeros;
+			int num_ones;
+			occurrence() : num_zeros(0), num_ones(0) {}
+		};
 
-  uint16_t result = 0;
-  result = setBitVal(result, 15, findMajority(status, numGetStatus, 15)); // STALL_A
-  result = setBitVal(result, 14, findMajority(status, numGetStatus, 14)); // STALL_B
-  result = setBitVal(result, 13, findImportantValue(status, numGetStatus, 13, 0)); // OCD
-  result = setBitVal(result, 12, findMajority(status, numGetStatus, 12)); // TH_STATUS(Hi)
-  result = setBitVal(result, 11, findMajority(status, numGetStatus, 11)); // TH_STATUS(Lo)
-  result = setBitVal(result, 10, findImportantValue(status, numGetStatus, 10, 0)); // UVLO_ADC
-  result = setBitVal(result,  9, findImportantValue(status, numGetStatus,  9, 0)); // UVLO
-  result = setBitVal(result,  8, findImportantValue(status, numGetStatus,  8, 1)); // STCK_MOD
-  result = setBitVal(result,  7, findImportantValue(status, numGetStatus,  7, 1)); // CMD_ERROR
-  result = setBitVal(result,  6, findMajority(status, numGetStatus,  6)); // MOT_STATUS(Hi)
-  result = setBitVal(result,  5, findMajority(status, numGetStatus,  5)); // MOT_STATUS(Lo)
-  result = setBitVal(result,  4, findMajority(status, numGetStatus,  4)); // DIR
-  result = setBitVal(result,  3, findImportantValue(status, numGetStatus,  3, 1)); // SW_EVN
-  result = setBitVal(result,  2, findImportantValue(status, numGetStatus,  2, 1)); // SW_F
-  result = setBitVal(result,  1, findImportantValue(status, numGetStatus,  1, 0)); // BUSY
-  result = setBitVal(result,  0, findMajority(status, numGetStatus,  0)); // HiZ
-  
-  return result;
+		occurrence o;
+
+		for (auto i = 0; i < sizeOfInput; ++i) {
+			const auto v = getBitVal(input[i], bitIndex);
+			if (v == 0) {
+				o.num_zeros++;
+				} else {
+				o.num_ones++;
+			}
+		}
+
+		return o.num_zeros > o.num_ones ? 0 : 1;
+	};
+
+	uint16_t result = 0;
+	result = setBitVal(result, 15, findMajority(status, numGetStatus, 15)); // STALL_A
+	result = setBitVal(result, 14, findMajority(status, numGetStatus, 14)); // STALL_B
+	result = setBitVal(result, 13, findImportantValue(status, numGetStatus, 13, 0)); // OCD
+	result = setBitVal(result, 12, findMajority(status, numGetStatus, 12)); // TH_STATUS(Hi)
+	result = setBitVal(result, 11, findMajority(status, numGetStatus, 11)); // TH_STATUS(Lo)
+	result = setBitVal(result, 10, findImportantValue(status, numGetStatus, 10, 0)); // UVLO_ADC
+	result = setBitVal(result,  9, findImportantValue(status, numGetStatus,  9, 0)); // UVLO
+	result = setBitVal(result,  8, findImportantValue(status, numGetStatus,  8, 1)); // STCK_MOD
+	result = setBitVal(result,  7, findImportantValue(status, numGetStatus,  7, 1)); // CMD_ERROR
+	result = setBitVal(result,  6, findMajority(status, numGetStatus,  6)); // MOT_STATUS(Hi)
+	result = setBitVal(result,  5, findMajority(status, numGetStatus,  5)); // MOT_STATUS(Lo)
+	result = setBitVal(result,  4, findMajority(status, numGetStatus,  4)); // DIR
+	result = setBitVal(result,  3, findImportantValue(status, numGetStatus,  3, 1)); // SW_EVN
+	result = setBitVal(result,  2, findImportantValue(status, numGetStatus,  2, 1)); // SW_F
+	result = setBitVal(result,  1, findImportantValue(status, numGetStatus,  1, 0)); // BUSY
+	result = setBitVal(result,  0, findMajority(status, numGetStatus,  0)); // HiZ
+
+	return result;
 }
 
 void statusCheck()
 {
 	for(uint8_t i = 0; i < NUM_POWER_STEP; i ++) {
 		if (!isOriginReturn[i]) {
-      const auto status = getStatus_Strict(i);
-      
+			const auto status = getStatus_Strict(i);
+
 			uint8_t sw = (status & 0b100) >> 2;
 			uint8_t busy = (status & 0b10) >> 1;
 			uint8_t dir = (status & 0b10000) >> 4;
 
 			const uint8_t mask = 0xFF;
-			
-		//	if (!(status & mask)) {
-				SerialUSB.print("status@ ");
-				SerialUSB.print(i);
-        SerialUSB.print(" = ");
-				SerialUSB.println(status, BIN);
-        delay(1000);
-				//SerialUSB.print(sw);
-				//SerialUSB.print(" ");
-				//SerialUSB.print(busy);
-				//SerialUSB.print(" ");
-				//SerialUSB.print(dir);
-				//SerialUSB.println();
+
+			//	if (!(status & mask)) {
+			//SerialUSB.print("status@ ");
+			//SerialUSB.print(i);
+			//SerialUSB.print(" = ");
+			//SerialUSB.println(status, BIN);
+			//delay(1000);
+			//SerialUSB.print(sw);
+			//SerialUSB.print(" ");
+			//SerialUSB.print(busy);
+			//SerialUSB.print(" ");
+			//SerialUSB.print(dir);
+			//SerialUSB.println();
 			//}
 
 			if (sw != lastSw[i]) {
+			/*
+				if (goUntilEnd[i] == 0 && sw == 1) {
+					goUntilEnd[i] = 1;
+				}
+			*/
 				if (isSendSw[i]) {
 					sendSw(i, sw, dir);
 				}
