@@ -9,6 +9,7 @@
 #include <Arduino.h>
 #include <Ethernet.h>
 #include <SPI.h>
+#include <Adafruit_SleepyDog.h>
 
 #include "powerSTEP01ArduinoLibrary.h"
 
@@ -17,10 +18,12 @@
 #define ledPin	13
 byte mac[] = { 0x90, 0xA2, 0xDA, 0xD6, 0xA3, 164 };
 IPAddress myIp(10,0,0,164);
-IPAddress destIp(10, 0, 0, 10);
+IPAddress destIp(10, 0, 0, 163);
 unsigned int outPort = 20164;
 unsigned int inPort = 20000;
 EthernetUDP Udp;
+
+#define W5500_RESET A3
 
 #define POWERSTEP_MISO	6	// D6 /SERCOM3/PAD[2] miso
 #define POWERSTEP_MOSI	11	// D11/SERCOM3/PAD[0] mosi
@@ -71,6 +74,8 @@ void setup()
 	// Start serial
 	SerialUSB.begin(115200);
 	SerialUSB.println("powerSTEP01 Arduino control initialising...");
+
+	pinMode(W5500_RESET, OUTPUT);
 
 	// Prepare pins
 	pinMode(POWERSTEP_RESET_PIN, OUTPUT);
@@ -128,11 +133,18 @@ void setup()
 		delay(100);
 	}
 
+	digitalWrite(W5500_RESET, HIGH);
+	delay(1);
+	digitalWrite(W5500_RESET, LOW);
+	delay(1);
+	digitalWrite(W5500_RESET, HIGH);
 
 	SerialUSB.println(F("Initialisation complete"));
 
 	Ethernet.begin(mac, myIp);
 	Udp.begin(inPort);
+
+	Watchdog.enable(16000);
 }
 
 void sendOneData(char *address, int32_t data) {
@@ -155,9 +167,25 @@ void sendOneData(char *address, uint8_t target, int32_t data) {
 }
 
 void setDestIp(OSCMessage &msg ,int addrOffset) {
+	int newFlag;
+	if (destIp[3] == Udp.remoteIP()[3]) {
+		newFlag = 0;
+		} else {
+		newFlag = 1;
+	}
 	destIp = Udp.remoteIP();
-	sendOneData("/newDestIp", (int32_t)destIp[3]);
+
+	OSCMessage newMes("/newDestIp");
+
+	newMes.add((int32_t)destIp[3]);
+	newMes.add((int32_t)newFlag);
+
+	Udp.beginPacket(destIp, outPort);
+	newMes.send(Udp);
+	Udp.endPacket();
+	newMes.empty();
 	digitalWrite(ledPin, !digitalRead(ledPin));
+	Watchdog.reset();
 }
 
 void setSwFlag(OSCMessage &msg ,int addrOffset) {
@@ -752,11 +780,11 @@ void statusCheck()
 			//}
 
 			if (sw != lastSw[i]) {
-			/*
+				/*
 				if (goUntilEnd[i] == 0 && sw == 1) {
-					goUntilEnd[i] = 1;
+				goUntilEnd[i] = 1;
 				}
-			*/
+				*/
 				if (isSendSw[i]) {
 					sendSw(i, sw, dir);
 				}
